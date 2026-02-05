@@ -1,0 +1,5 @@
+export const ARCHIVE_STATUS = {
+  RUNNING: 'RUNNING',
+  SUCCESS: 'SUCCESS',
+  FAILED: 'FAILED',
+};
