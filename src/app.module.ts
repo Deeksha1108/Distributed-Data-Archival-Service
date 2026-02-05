@@ -19,7 +19,7 @@ dotenv.config();
       password: process.env.DB_PASSWORD || 'admin',
       database: process.env.DB_NAME || 'task_archiver',
       entities: [Task, ArchiveLog],
-      synchronize: true, // Disabled to prevent schema conflicts with existing DB
+      synchronize: true,
     }),
     TasksModule,
     S3Module,

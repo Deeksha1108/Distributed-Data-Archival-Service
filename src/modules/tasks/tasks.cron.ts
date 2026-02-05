@@ -6,10 +6,8 @@ import { TasksService } from './tasks.service';
 export class TasksCron {
   constructor(private readonly tasksService: TasksService) {}
 
-  // TESTING: every 1 minute
-  // PROD: weekly (Sunday 2 AM)
-  @Cron(CronExpression.EVERY_MINUTE)
-  // @Cron('0 2 * * 0')
+  // @Cron(CronExpression.EVERY_MINUTE)  // TESTING: every 1 minute
+  @Cron('0 2 * * 0') // weekly (Sunday 2 AM)
   async handleArchive() {
     console.log('[CRON] Task archive job started');
     await this.tasksService.exportToS3();

@@ -1,98 +1,233 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Task Archiver – Automated DB Archival System
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+## Cron-Based Data Archival using NestJS, PostgreSQL & AWS S3
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+This project is a **production-style backend system** that automatically **archives old database records** from PostgreSQL to **AWS S3** in **time-based chunks** using **cron jobs**.
 
-## Description
+It demonstrates how real-world backend systems:
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Control database growth
+- Archive historical data safely
+- Avoid duplicate exports
+- Run background jobs reliably
 
-## Project setup
+## Problem This Project Solves
 
-```bash
-$ npm install
+In real production systems:
+
+- Databases grow continuously
+- Old data slows down queries
+- Keeping all data in DB is expensive and unnecessary
+
+**Solution:**
+Move old data to cheap storage (S3) in a **controlled, auditable, and automated way**.
+
+This project implements exactly that.
+
+## High-Level Flow (Simple Explanation)
+
+```
+PostgreSQL → (Cron Job) → Chunk Data → Upload to S3 → Delete from DB → Log Archive
 ```
 
-## Compile and run the project
+### What happens automatically:
 
-```bash
-# development
-$ npm run start
+1. Cron job runs
+2. Finds next **60-day data window**
+3. Uploads tasks to AWS S3
+4. Deletes archived records from DB
+5. Saves archive history in `archive_logs`
 
-# watch mode
-$ npm run start:dev
+No manual intervention required.
 
-# production mode
-$ npm run start:prod
+## Core Features Implemented
+
+- Time-based chunking (60 days per run)
+
+- Cron-based automation
+
+- Safe archival (upload → then delete)
+
+- No duplicate uploads (archive logs tracking)
+
+- Worker threads for heavy S3 upload
+
+- Production vs Testing cron configuration
+
+- Fully auditable archive history
+
+## Why Chunk-Based Archival?
+
+Instead of exporting everything at once:
+
+- Reduces memory usage
+- Prevents DB overload
+- Allows retry on failure
+- Matches real production strategies
+
+**Chunk size used:** `60 days`
+
+## Cron Strategy (Testing vs Production)
+
+### Testing
+
+```typescript
+@Cron(CronExpression.EVERY_MINUTE)
 ```
 
-## Run tests
+- Fast feedback
+- Easy debugging
 
-```bash
-# unit tests
-$ npm run test
+### Production (Recommended)
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+```typescript
+@Cron('0 2 * * 0') // Every Sunday at 2 AM
 ```
 
-## Deployment
+**Why weekly at night?**
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+- Low traffic hours
+- Predictable DB load
+- Common industry standard for archival jobs
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Archival Safety Logic
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+Archival follows a **safe two-step process**:
+
+1. Upload data to S3
+2. Only after successful upload → delete from DB
+
+**If upload fails:**
+
+- DB data is **not deleted**
+- Archive marked as FAILED
+- Retry possible
+
+## Archive Logs (Audit Trail)
+
+Every archive run is tracked in `archive_logs` table:
+
+| Field | Purpose |
+|-------|---------|
+| fromDate | Chunk start date |
+| toDate | Chunk end date |
+| status | RUNNING / SUCCESS / FAILED |
+| s3Path | Uploaded file path |
+| retryCount | Failure tracking |
+| createdAt | Execution timestamp |
+
+This ensures:
+
+- No duplicate uploads
+- Full traceability
+- Easy debugging
+
+## Tech Stack Used
+
+- **NestJS**
+- **PostgreSQL**
+- **TypeORM**
+- **AWS S3**
+- **Worker Threads**
+- **@nestjs/schedule (Cron Jobs)**
+- **dotenv**
+
+## Project Folder Structure
+
+```
+src/
+├── common/
+│   └── constants.ts
+├── config/
+│   └── aws.config.ts
+├── database/
+│   ├── entities/
+│   │   ├── tasks.entity.ts
+│   │   └── archive_logs.entity.ts
+│   └── database.module.ts
+├── modules/
+│   ├── s3/
+│   │   ├── s3.module.ts
+│   │   └── s3.service.ts
+│   └── tasks/
+│       ├── tasks.cron.ts
+│       ├── tasks.module.ts
+│       ├── tasks.service.ts
+│       └── tasks.worker.ts
+├── app.module.ts
+└── main.ts
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Environment Variables (.env)
 
-## Resources
+```env
+# PostgreSQL
+DB_HOST=localhost
+DB_PORT=5432
+DB_USERNAME=postgres
+DB_PASSWORD=admin
+DB_NAME=task_archiver
 
-Check out a few resources that may come in handy when working with NestJS:
+# AWS S3
+AWS_ACCESS_KEY_ID=YOUR_KEY
+AWS_SECRET_ACCESS_KEY=YOUR_SECRET
+AWS_REGION=ap-south-1
+AWS_BUCKET_NAME=cron-db-bucket
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+`.env` is ignored from Git (as it should be).
 
-## Support
+## Setup Instructions
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Clone Repository
 
-## Stay in touch
+```bash
+git clone https://github.com/Deeksha1108/Task-Archiver.git
+cd task-archiver
+npm install
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Start PostgreSQL
 
-## License
+Ensure PostgreSQL is running and DB exists.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Run Application
+
+```bash
+npm run start:dev
+```
+
+## What You'll See in Logs
+
+```
+[CRON] Task archive job started
+[TasksService] Archiving 1278 tasks (2025-09-01 → 2025-10-30)
+[TasksService] Archive success → deleted 1278 records
+[CRON] Task archive job finished
+```
+
+## Production-Level Concepts Applied
+
+- Background job processing
+- Time-based data partitioning
+- Safe delete after persistence
+- Cloud storage offloading
+- Audit logging
+- Failure handling
+- Clean modular architecture
+
+## What I Learned from This Project
+
+- How production systems manage large datasets
+- How cron jobs are used responsibly
+- Safe data archival strategies
+- AWS S3 integration patterns
+- Worker threads for heavy processing
+- Avoiding duplicate background jobs
+- Writing maintainable backend systems
+
+---
+
+**Made By Deeksha**
+
+This project demonstrates **real-world backend archival architecture** using NestJS, PostgreSQL, and AWS S3 — focused on **scalability, safety, and automation**.
